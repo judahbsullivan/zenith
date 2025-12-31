@@ -1,0 +1,140 @@
+name: Discord Changelog Notifications
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [closed]
+
+# Security: Limit permissions to only what's needed
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Changelog to Discord
+        env:
+          DISCORD_CHANGELOG_WEBHOOK_URL: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK_URL }}
+        run: |
+          set -e  # Exit on error
+          set +x  # Don't echo commands (prevents secret exposure in logs)
+          
+          # Mask the webhook URL in logs to prevent accidental exposure
+          echo "::add-mask::$DISCORD_CHANGELOG_WEBHOOK_URL"
+          
+          # Validate secret is set
+          if [ -z "$DISCORD_CHANGELOG_WEBHOOK_URL" ]; then
+            echo "❌ DISCORD_CHANGELOG_WEBHOOK_URL secret is not set"
+            exit 1
+          fi
+          
+          # Validate webhook URL format for security
+          if [[ ! "$DISCORD_CHANGELOG_WEBHOOK_URL" =~ ^https://discord\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+$ ]]; then
+            echo "❌ Invalid Discord webhook URL format"
+            exit 1
+          fi
+          
+          # Determine event type and get data
+          if [ "${{ github.event_name }}" = "push" ]; then
+            EVENT_TYPE="push"
+            BRANCH="${{ github.ref_name }}"
+            COMMITS_COUNT="${{ github.event.commits | length }}"
+            PUSHER="${{ github.event.pusher.name }}"
+            COMPARE_URL="${{ github.event.compare }}"
+            
+            # Get commit messages
+            COMMITS=$(echo '${{ toJSON(github.event.commits) }}' | jq -r '.[] | "- " + (.message | split("\n")[0])' | head -10)
+            
+            COLOR="3447003"  # Blue
+            EMOJI="📦"
+            TITLE="Code Pushed"
+            # Escape backticks for shell variable
+            BRANCH_ESC=$(echo "$BRANCH" | sed "s/\\\`/\\\\\\\`/g")
+            DESCRIPTION="**$COMMITS_COUNT commit(s)** pushed to branch \`$BRANCH_ESC\` by $PUSHER"
+            
+          elif [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+            EVENT_TYPE="merge"
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            PR_TITLE="${{ github.event.pull_request.title }}"
+            PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+            PR_URL="${{ github.event.pull_request.html_url }}"
+            BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+            HEAD_BRANCH="${{ github.event.pull_request.head.ref }}"
+            
+            COLOR="3066993"  # Green
+            EMOJI="🔀"
+            TITLE="Pull Request Merged"
+            # Escape backticks and newlines
+            HEAD_BRANCH_ESC=$(echo "$HEAD_BRANCH" | sed "s/\\\`/\\\\\\\`/g")
+            BASE_BRANCH_ESC=$(echo "$BASE_BRANCH" | sed "s/\\\`/\\\\\\\`/g")
+            PR_TITLE_ESC=$(echo "$PR_TITLE" | sed "s/\\\`/\\\\\\\`/g" | sed 's/$/\\n/' | tr -d '\n' | sed 's/\\n$//')
+            DESCRIPTION="**PR #$PR_NUMBER**: $PR_TITLE_ESC\nMerged \`$HEAD_BRANCH_ESC\` → \`$BASE_BRANCH_ESC\` by $PR_AUTHOR"
+            COMPARE_URL="$PR_URL"
+            COMMITS=""
+          else
+            echo "⏭️  PR not merged, skipping..."
+            exit 0
+          fi
+          
+          # Export variables for Node.js script
+          export EMOJI TITLE COLOR
+          
+          # Use Node.js to properly build JSON payload with escaping
+          cat > /tmp/discord_changelog_payload.js <<JS_EOF
+          const repo = "${{ github.repository }}";
+          const emoji = process.env.EMOJI || '📦';
+          const title = process.env.TITLE || 'Code Updated';
+          const color = parseInt(process.env.COLOR || '3447003', 10);
+          const description = '$DESCRIPTION';
+          const compareUrl = '$COMPARE_URL';
+          const commits = '$COMMITS';
+          
+          // Build embed
+          const embed = {
+            title: emoji + ' ' + title,
+            description: description,
+            url: compareUrl || 'https://github.com/' + repo,
+            color: color,
+            fields: commits && commits.length > 0 ? [
+              {
+                name: 'Recent Commits',
+                value: commits.length > 1000 ? commits.substring(0, 1000) + '...' : commits,
+                inline: false
+              }
+            ] : [],
+            footer: {
+              text: repo
+            },
+            timestamp: new Date().toISOString()
+          };
+          
+          console.log(JSON.stringify({ embeds: [embed] }));
+          JS_EOF
+          
+          # Run the Node.js script
+          PAYLOAD=$(node /tmp/discord_changelog_payload.js)
+          
+          # Send to Discord with error handling
+          HTTP_CODE=$(curl -s -o /tmp/discord_response.txt -w "%{http_code}" \
+            -X POST "$DISCORD_CHANGELOG_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+          
+          # Check response
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Successfully sent changelog notification to Discord"
+          else
+            echo "❌ Failed to send notification (HTTP $HTTP_CODE)"
+            if [ -f /tmp/discord_response.txt ]; then
+              echo "Response: $(cat /tmp/discord_response.txt)"
+            fi
+            exit 1
+          fi
+          
+          # Clean up
+          rm -f /tmp/discord_response.txt /tmp/discord_changelog_payload.js
+

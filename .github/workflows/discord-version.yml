@@ -1,0 +1,206 @@
+name: Discord Version Update Notifications
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'package.json'
+      - 'version.txt'
+      - 'VERSION'
+
+# Security: Limit permissions to only what's needed
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit to compare versions
+      
+      - name: Send Version Update to Discord
+        env:
+          DISCORD_VERSION_WEBHOOK_URL: ${{ secrets.DISCORD_VERSION_WEBHOOK_URL }}
+        run: |
+          set -e  # Exit on error
+          set +x  # Don't echo commands (prevents secret exposure in logs)
+          
+          # Mask the webhook URL in logs to prevent accidental exposure
+          echo "::add-mask::$DISCORD_VERSION_WEBHOOK_URL"
+          
+          # Validate secret is set
+          if [ -z "$DISCORD_VERSION_WEBHOOK_URL" ]; then
+            echo "❌ DISCORD_VERSION_WEBHOOK_URL secret is not set"
+            exit 1
+          fi
+          
+          # Validate webhook URL format for security
+          if [[ ! "$DISCORD_VERSION_WEBHOOK_URL" =~ ^https://discord\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+$ ]]; then
+            echo "❌ Invalid Discord webhook URL format"
+            exit 1
+          fi
+          
+          # Check for version in package.json
+          if [ -f "package.json" ]; then
+            CURRENT_VERSION=$(node -p "require('./package.json').version || 'unknown'")
+            PREVIOUS_VERSION=$(git show HEAD~1:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version || 'unknown'" 2>/dev/null || echo "unknown")
+          elif [ -f "version.txt" ]; then
+            CURRENT_VERSION=$(cat version.txt | tr -d ' \n')
+            PREVIOUS_VERSION=$(git show HEAD~1:version.txt 2>/dev/null | tr -d ' \n' || echo "unknown")
+          elif [ -f "VERSION" ]; then
+            CURRENT_VERSION=$(cat VERSION | tr -d ' \n')
+            PREVIOUS_VERSION=$(git show HEAD~1:VERSION 2>/dev/null | tr -d ' \n' || echo "unknown")
+          else
+            echo "⏭️  No version file found, skipping..."
+            exit 0
+          fi
+          
+          # Check if version actually changed
+          if [ "$CURRENT_VERSION" = "$PREVIOUS_VERSION" ] || [ "$PREVIOUS_VERSION" = "unknown" ]; then
+            echo "ℹ️  Version unchanged or first commit, skipping notification..."
+            exit 0
+          fi
+          
+          REPO="${{ github.repository }}"
+          COMMIT_SHA="${{ github.sha }}"
+          COMMIT_URL="https://github.com/$REPO/commit/$COMMIT_SHA"
+          COMMIT_MESSAGE="${{ github.event.head_commit.message }}"
+          COMMIT_AUTHOR="${{ github.event.head_commit.author.name }}"
+          
+          # Determine version change type (simple semver parsing)
+          VERSION_TYPE=$(node <<VERSION_SCRIPT
+          const current = '$CURRENT_VERSION';
+          const previous = '$PREVIOUS_VERSION';
+          
+          // Simple semver parsing (major.minor.patch)
+          function parseVersion(version) {
+            const parts = version.split('.').map(function(p) { return parseInt(p) || 0; });
+            return {
+              major: parts[0] || 0,
+              minor: parts[1] || 0,
+              patch: parts[2] || 0
+            };
+          }
+          
+          try {
+            const curr = parseVersion(current);
+            const prev = parseVersion(previous);
+            
+            if (curr.major > prev.major) {
+              console.log('major');
+            } else if (curr.minor > prev.minor) {
+              console.log('minor');
+            } else if (curr.patch > prev.patch) {
+              console.log('patch');
+            } else {
+              console.log('other');
+            }
+          } catch (e) {
+            console.log('other');
+          }
+          VERSION_SCRIPT
+          )
+          
+          # Set color and emoji based on version type
+          case "$VERSION_TYPE" in
+            major)
+              COLOR="15158332"  # Red
+              EMOJI="🚀"
+              TITLE="Major Version Update"
+              ;;
+            minor)
+              COLOR="15105570"  # Orange
+              EMOJI="✨"
+              TITLE="Minor Version Update"
+              ;;
+            patch)
+              COLOR="3066993"  # Green
+              EMOJI="🔧"
+              TITLE="Patch Version Update"
+              ;;
+            *)
+              COLOR="3447003"  # Blue
+              EMOJI="📌"
+              TITLE="Version Update"
+              ;;
+          esac
+          
+          # Export variables for Node.js script
+          export EMOJI TITLE COLOR
+          
+          # Use Node.js to properly build JSON payload with escaping
+          cat > /tmp/discord_version_payload.js <<JS_EOF
+          const repo = "$REPO";
+          const emoji = process.env.EMOJI || '📌';
+          const title = process.env.TITLE || 'Version Update';
+          const color = parseInt(process.env.COLOR || '3447003', 10);
+          const previousVersion = '$PREVIOUS_VERSION';
+          const currentVersion = '$CURRENT_VERSION';
+          const commitUrl = '$COMMIT_URL';
+          const commitMessage = ('$COMMIT_MESSAGE' || '').substring(0, 200);
+          const commitAuthor = '$COMMIT_AUTHOR';
+          
+          // Build embed
+          const embed = {
+            title: emoji + ' ' + title,
+            description: '**Version changed:** ' + String.fromCharCode(96) + previousVersion + String.fromCharCode(96) + ' → ' + String.fromCharCode(96) + currentVersion + String.fromCharCode(96),
+            url: commitUrl,
+            color: color,
+            fields: [
+              {
+                name: 'Previous Version',
+                value: String.fromCharCode(96) + previousVersion + String.fromCharCode(96),
+                inline: true
+              },
+              {
+                name: 'New Version',
+                value: String.fromCharCode(96) + currentVersion + String.fromCharCode(96),
+                inline: true
+              },
+              {
+                name: 'Commit',
+                value: '[' + commitMessage.substring(0, 50) + '...](' + commitUrl + ')',
+                inline: false
+              },
+              {
+                name: 'Author',
+                value: commitAuthor,
+                inline: true
+              }
+            ],
+            footer: {
+              text: repo
+            },
+            timestamp: new Date().toISOString()
+          };
+          
+          console.log(JSON.stringify({ embeds: [embed] }));
+          JS_EOF
+          
+          # Run the Node.js script
+          PAYLOAD=$(node /tmp/discord_version_payload.js)
+          
+          # Send to Discord with error handling
+          HTTP_CODE=$(curl -s -o /tmp/discord_response.txt -w "%{http_code}" \
+            -X POST "$DISCORD_VERSION_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+          
+          # Check response
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Successfully sent version update notification to Discord"
+          else
+            echo "❌ Failed to send notification (HTTP $HTTP_CODE)"
+            if [ -f /tmp/discord_response.txt ]; then
+              echo "Response: $(cat /tmp/discord_response.txt)"
+            fi
+            exit 1
+          fi
+          
+          # Clean up
+          rm -f /tmp/discord_response.txt /tmp/discord_version_payload.js
+
