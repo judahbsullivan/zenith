@@ -41,6 +41,50 @@ function transformEventAttributes(html: string): { transformedHtml: string; even
   };
 }
 
+// Transform :class and :value attributes to data-zen-* attributes
+// Returns: { transformedHtml, bindings } where bindings contains attribute binding info
+function transformAttributeBindings(html: string): { transformedHtml: string; bindings: Array<{ type: 'class' | 'value'; expression: string }> } {
+  const document = parse5.parse(html);
+  const bindings: Array<{ type: 'class' | 'value'; expression: string }> = [];
+  
+  function walk(node: any) {
+    // Transform attributes on element nodes
+    if (node.attrs && Array.isArray(node.attrs)) {
+      node.attrs = node.attrs.map((attr: any) => {
+        const attrName = attr.name;
+        // Check if attribute is :class or :value (colon-prefixed)
+        if (attrName === ':class' || attrName === ':value') {
+          const bindingType = attrName.slice(1) as 'class' | 'value'; // Remove ":" prefix
+          const expression = attr.value.trim(); // Store the quoted expression
+          
+          // Track this binding
+          bindings.push({ type: bindingType, expression });
+          
+          // Transform to data-zen-* attribute
+          return {
+            name: `data-zen-${bindingType}`,
+            value: expression // Store the expression string
+          };
+        }
+        return attr;
+      });
+    }
+    
+    // Recursively process child nodes
+    if (node.childNodes) {
+      node.childNodes.forEach(walk);
+    }
+  }
+  
+  walk(document);
+  
+  // Serialize back to HTML string
+  return {
+    transformedHtml: parse5.serialize(document),
+    bindings
+  };
+}
+
 // Strip script and style tags from HTML since they're extracted to separate files
 function stripScriptAndStyleTags(html: string): string {
   // Remove script tags (including content)
@@ -53,12 +97,14 @@ function stripScriptAndStyleTags(html: string): string {
 // this function splits the props into what we are compiling the them down too 
 // html styles and scripts
 export function splitZen(file: ZenFile) {
-  // First transform event attributes, then strip script/style tags
-  const { transformedHtml, eventTypes } = transformEventAttributes(file.html);
+  // First transform attribute bindings, then event attributes, then strip script/style tags
+  const { transformedHtml: htmlAfterBindings, bindings } = transformAttributeBindings(file.html);
+  const { transformedHtml, eventTypes } = transformEventAttributes(htmlAfterBindings);
   return {
     html: stripScriptAndStyleTags(transformedHtml),
     scripts: file.scripts.map(s => s.content),
     styles: file.styles.map(style => style.content),
-    eventTypes: Array.from(eventTypes).sort() // Return sorted array of event types
+    eventTypes: Array.from(eventTypes).sort(), // Return sorted array of event types
+    bindings // Return attribute bindings info
   }
 }
