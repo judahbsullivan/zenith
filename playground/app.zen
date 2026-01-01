@@ -84,12 +84,214 @@
         }
       }
 
+      // Test: Attribute bindings - :class and :value
+      function toggleActive(event, el) {
+        state.isActive = !state.isActive;
+        log(`✓ :class binding - isActive: ${state.isActive}`);
+      }
+
+      function toggleHidden(event, el) {
+        state.isHidden = !state.isHidden;
+        log(`✓ :class binding - isHidden: ${state.isHidden}`);
+      }
+
+      function updateUsername(event, el) {
+        state.username = el.value;
+        const display = document.getElementById('username-display');
+        if (display) display.textContent = state.username;
+        log(`✓ :value binding - username: "${state.username}"`);
+      }
+
+      function setUsernameToJudah(event, el) {
+        state.username = 'Judah';
+        const display = document.getElementById('username-display');
+        if (display) display.textContent = state.username;
+        log('✓ State updated: username = "Judah"');
+      }
+
+      // Test: Direct state mutation to verify reactivity
+      function testStateMutation(event, el) {
+        log('Testing direct state mutation...');
+        state.isActive = true;
+        state.isHidden = false;
+        state.username = 'TestUser';
+        log('✓ State mutated: isActive=true, isHidden=false, username="TestUser"');
+        log('✓ Check DOM - classes and values should update automatically');
+        
+        // Update display
+        const display = document.getElementById('username-display');
+        if (display) display.textContent = state.username;
+      }
+
+      // Edge case tests
+      function testMultipleStateDeps(event, el) {
+        state.isActive = !state.isActive;
+        state.isHidden = !state.isHidden;
+        log(`✓ Multiple deps test - isActive: ${state.isActive}, isHidden: ${state.isHidden}`);
+        
+        // Verify synchronous update (no lifecycle drift)
+        const testEl = document.getElementById('multiple-deps-test');
+        if (testEl) {
+          // Check immediately - should be updated synchronously
+          const actualClasses = testEl.className;
+          const expectedActive = state.isActive && !state.isHidden;
+          const classList = actualClasses.split(/\s+/).filter(c => c);
+          const hasActive = classList.includes('active') === expectedActive;
+          const hasHidden = classList.includes('hidden') === state.isHidden;
+          const hasVisible = classList.includes('visible') === !state.isHidden;
+          const hasCombined = classList.includes('combined') === expectedActive;
+          
+          const allCorrect = hasActive && hasHidden && hasVisible && hasCombined;
+          log(`:class updated -> ${actualClasses} (synchronous check: ${allCorrect ? '✓' : '✗'})`);
+        }
+      }
+
+      function testFalsyProperties(event, el) {
+        state.falsyTest = !state.falsyTest;
+        state.undefinedTest = state.undefinedTest === undefined ? true : undefined;
+        log(`✓ Falsy test - falsyTest: ${state.falsyTest}, undefinedTest: ${state.undefinedTest}`);
+        
+        // Verify synchronous update (no lifecycle drift)
+        const testEl = document.getElementById('falsy-test');
+        if (testEl) {
+          // Check immediately - should be updated synchronously
+          const actualClasses = testEl.className;
+          const expectedClasses = ['display-box'];
+          if (state.falsyTest) expectedClasses.push('active');
+          if (state.undefinedTest) expectedClasses.push('undefined');
+          expectedClasses.push('visible'); // always true
+          
+          const classList = actualClasses.split(/\s+/).filter(c => c);
+          const hasAllExpected = expectedClasses.every(c => classList.includes(c));
+          log(`:class updated -> ${actualClasses} (synchronous check: ${hasAllExpected ? '✓' : '✗'})`);
+        }
+      }
+
+      function testStringClass(event, el) {
+        state.stringClass = state.stringClass === 'class-a' ? 'class-b class-c' : 'class-a';
+        log(`✓ String class test - stringClass: "${state.stringClass}"`);
+        
+        const testEl = document.getElementById('string-class-test');
+        if (testEl) {
+          log(`:class updated -> ${testEl.className}`);
+        }
+      }
+
+      function testEmptyValue(event, el) {
+        // Toggle between empty and non-empty to test edge case
+        if (state.emptyValue === '' || state.emptyValue === undefined) {
+          state.emptyValue = 'Non-empty value';
+          log('✓ Empty value test - state.emptyValue set to "Non-empty value"');
+        } else {
+          state.emptyValue = '';
+          log('✓ Empty value test - state.emptyValue set to empty string');
+        }
+        
+        // Verify synchronous update (no lifecycle drift)
+        const testEl = document.getElementById('empty-value-test');
+        if (testEl) {
+          // Check immediately - should be updated synchronously
+          const actualValue = testEl.value;
+          log(`:value updated -> "${actualValue}" (synchronous check: ${actualValue === state.emptyValue ? '✓' : '✗'})`);
+        }
+      }
+
+      function testSpecialChars(event, el) {
+        // Toggle between different special character sets
+        const specialCharSets = [
+          'Test & < > " \' Special',
+          'Another &amp; &lt; &gt; Test',
+          'Quotes: "double" and \'single\'',
+          'Normal text'
+        ];
+        
+        const currentIndex = specialCharSets.indexOf(state.specialChars);
+        const nextIndex = (currentIndex + 1) % specialCharSets.length;
+        state.specialChars = specialCharSets[nextIndex];
+        
+        log(`✓ Special chars test - state.specialChars: "${state.specialChars}"`);
+        
+        // Verify synchronous update (no lifecycle drift)
+        const testEl = document.getElementById('special-chars-test');
+        if (testEl) {
+          // Check immediately - should be updated synchronously
+          const actualValue = testEl.value;
+          log(`:value updated -> "${actualValue}" (synchronous check: ${actualValue === state.specialChars ? '✓' : '✗'})`);
+        }
+      }
+
+      function testNonExistentState(event, el) {
+        // Toggle between existing and non-existent
+        if (state.nonExistentState === undefined) {
+          state.nonExistentState = 'Now exists!';
+          log('✓ Non-existent state test - state.nonExistentState set to "Now exists!"');
+        } else {
+          delete state.nonExistentState;
+          log('✓ Non-existent state test - deleted state.nonExistentState');
+        }
+        
+        // Verify synchronous update (no lifecycle drift)
+        const testEl = document.getElementById('non-existent-test');
+        if (testEl) {
+          // Check immediately - should be updated synchronously
+          const actualValue = testEl.value;
+          const expectedValue = state.nonExistentState || '';
+          log(`:value updated -> "${actualValue}" (synchronous check: ${actualValue === expectedValue ? '✓' : '✗'})`);
+        }
+      }
+
+      function testCombinedUpdates(event, el) {
+        // Multiple state updates - all should happen synchronously
+        state.isActive = !state.isActive;
+        state.isHidden = !state.isHidden;
+        state.username = 'CombinedTest' + Date.now();
+        log(`✓ Combined test - isActive: ${state.isActive}, isHidden: ${state.isHidden}, username: "${state.username}"`);
+        
+        // Verify synchronous updates (no lifecycle drift)
+        const classEl = document.getElementById('combined-class-test');
+        const valueEl = document.getElementById('combined-value-test');
+        
+        if (classEl) {
+          const actualClasses = classEl.className;
+          const classList = actualClasses.split(/\s+/).filter(c => c);
+          const hasActive = classList.includes('active') === state.isActive;
+          const hasHidden = classList.includes('hidden') === state.isHidden;
+          const hasVisible = classList.includes('visible') === !state.isHidden;
+          const allCorrect = hasActive && hasHidden && hasVisible;
+          log(`:class updated -> ${actualClasses} (synchronous check: ${allCorrect ? '✓' : '✗'})`);
+        }
+        
+        if (valueEl) {
+          const actualValue = valueEl.value;
+          const valueCorrect = actualValue === state.username;
+          log(`:value updated -> "${actualValue}" (synchronous check: ${valueCorrect ? '✓' : '✗'})`);
+        }
+        
+        const display = document.getElementById('username-display');
+        if (display) display.textContent = state.username;
+      }
+
       // Initialize logging
       function initLog() {
         log('🚀 Phase 2 Event System & DOM Helpers Test Suite');
         log(
           'All DOM helper methods are ready: show(), hide(), addClass(), removeClass(), setText(), setHTML()'
         );
+        log('🚀 Phase 2 Attribute Bindings - :class and :value');
+        log('State initialized: isActive=false, isHidden=false, username=""');
+        
+        // Initialize username display
+        const display = document.getElementById('username-display');
+        if (display && window.state) {
+          display.textContent = window.state.username || '';
+        }
+        
+        // Verify state object exists
+        if (window.state) {
+          log('✓ State object is available: window.state');
+        } else {
+          log('✗ ERROR: State object not found!');
+        }
       }
     </script>
   </head>
@@ -147,6 +349,142 @@
           <div id="class-target" class="display-box">
             This element's class can be toggled
           </div>
+        </div>
+      </div>
+
+      <div class="test-section">
+        <h2>Attribute Bindings (:class, :value)</h2>
+
+        <div class="test-group">
+          <h3>:class Binding - Object Syntax</h3>
+          <button type="button" onclick="toggleActive">Toggle Active</button>
+          <button type="button" onclick="toggleHidden">Toggle Hidden</button>
+          <div :class="{ active: isActive, hidden: isHidden, visible: !isHidden }" class="display-box">
+            This div's classes are bound to state.isActive and state.isHidden
+          </div>
+          <span class="test-desc">Classes update automatically when state changes</span>
+        </div>
+
+        <div class="test-group">
+          <h3>:class Binding - Edge Cases</h3>
+          <div :class="{}" class="display-box">
+            Empty object binding (no classes)
+          </div>
+          <div :class="{ active: true, hidden: false, visible: true }" class="display-box">
+            Mixed truthy/falsy values (only true values applied)
+          </div>
+          <div :class="'static-class'" class="display-box">
+            String value (treated as raw class)
+          </div>
+        </div>
+
+        <div class="test-group">
+          <h3>:value Binding</h3>
+          <input
+            type="text"
+            :value="username"
+            oninput="updateUsername"
+            placeholder="Type to update state.username"
+          />
+          <div class="display-box">
+            Current state.username: "<span id="username-display"></span>"
+          </div>
+          <button type="button" onclick="setUsernameToJudah">
+            Set username to "Judah"
+          </button>
+          <button type="button" onclick="testStateMutation">
+            Test Direct State Mutation
+          </button>
+          <span class="test-desc">Input value is bound to state.username</span>
+        </div>
+
+        <div class="test-group">
+          <h3>:class Edge Cases - Multiple State Dependencies</h3>
+          <button type="button" onclick="testMultipleStateDeps">Toggle Multiple Dependencies</button>
+          <div 
+            id="multiple-deps-test"
+            :class="{ active: isActive && !isHidden, hidden: isHidden, visible: !isHidden, combined: isActive && !isHidden }" 
+            class="display-box"
+          >
+            Multiple state conditions: isActive && !isHidden
+          </div>
+          <span class="test-desc">Complex expression with multiple state properties</span>
+        </div>
+
+        <div class="test-group">
+          <h3>:class Edge Cases - Falsy and Undefined</h3>
+          <button type="button" onclick="testFalsyProperties">Toggle Falsy Properties</button>
+          <div 
+            id="falsy-test"
+            :class="{ active: falsyTest, hidden: false, visible: true, undefined: undefinedTest }" 
+            class="display-box"
+          >
+            Falsy test: only true values should be applied
+          </div>
+          <span class="test-desc">Only keys with true values are applied, falsy/undefined ignored</span>
+        </div>
+
+        <div class="test-group">
+          <h3>:class Edge Cases - String Instead of Object</h3>
+          <button type="button" onclick="testStringClass">Toggle String Class</button>
+          <div 
+            id="string-class-test"
+            :class="stringClass" 
+            class="display-box"
+          >
+            String value binding (not object)
+          </div>
+          <span class="test-desc">String values are applied as raw class names</span>
+        </div>
+
+        <div class="test-group">
+          <h3>:value Edge Cases - Empty/Default Values</h3>
+          <button type="button" onclick="testEmptyValue">Set Empty Value</button>
+          <button type="button" onclick="testNonExistentState">Delete State Property</button>
+          <input
+            id="empty-value-test"
+            type="text"
+            :value="emptyValue"
+            placeholder="Defaults to empty when undefined"
+          />
+          <input
+            id="non-existent-test"
+            type="text"
+            :value="nonExistentState"
+            placeholder="Non-existent state property"
+          />
+          <span class="test-desc">Handles empty strings and undefined state properties</span>
+        </div>
+
+        <div class="test-group">
+          <h3>:value Edge Cases - Special Characters</h3>
+          <button type="button" onclick="testSpecialChars">Set Special Characters</button>
+          <input
+            id="special-chars-test"
+            type="text"
+            :value="specialChars"
+            placeholder="Handles &, <, >, quotes"
+          />
+          <span class="test-desc">Special characters: &, <, >, quotes are handled correctly</span>
+        </div>
+
+        <div class="test-group">
+          <h3>Combined Test - Multiple State Updates</h3>
+          <button type="button" onclick="testCombinedUpdates">Toggle All & Update Username</button>
+          <div 
+            id="combined-class-test"
+            :class="{ active: isActive, hidden: isHidden, visible: !isHidden }" 
+            class="display-box"
+          >
+            Combined class test - multiple state properties
+          </div>
+          <input
+            id="combined-value-test"
+            type="text"
+            :value="username"
+            placeholder="Combined binding test"
+          />
+          <span class="test-desc">Multiple state updates happen synchronously</span>
         </div>
       </div>
 
@@ -264,6 +602,25 @@
         background: #fef3c7;
         border-color: #f59e0b;
         font-weight: 600;
+      }
+
+      .display-box.active {
+        background: #d1fae5;
+        border-color: #10b981;
+        font-weight: 600;
+      }
+
+      .display-box.hidden {
+        display: none;
+      }
+
+      .display-box.visible {
+        display: block;
+      }
+
+      .display-box.combined {
+        border-width: 3px;
+        font-weight: 700;
       }
 
       .log-section {
