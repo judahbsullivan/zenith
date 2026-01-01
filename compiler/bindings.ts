@@ -1,4 +1,4 @@
-// compiler/attribute-bindings.ts
+// compiler/bindings.ts
 // Phase 2: Object-style dynamic attribute bindings with quoted expressions
 // Supports :class and :value attributes with synchronous, deterministic updates
 
@@ -7,6 +7,8 @@ export function generateAttributeBindingRuntime(bindings: Array<{ type: 'class' 
     return ''; // No bindings, no runtime needed
   }
 
+  // Generate unique expression IDs for tracking
+  const expressionIds = bindings.map((_, i) => `expr_${i}`);
   const expressionsStr = JSON.stringify(bindings.map(b => b.expression));
   const typesStr = JSON.stringify(bindings.map(b => b.type));
 

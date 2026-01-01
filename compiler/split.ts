@@ -245,7 +245,7 @@ export function splitZen(file: ZenFile) {
   const { transformedHtml: htmlAfterEvents, eventTypes } = transformEventAttributes(file.html);
 
   // Then transform attribute bindings (:class, :value)
-  const { transformedHtml: htmlAfterAttributeBindings, bindings: attributeBindings } = transformAttributeBindings(htmlAfterEvents);
+  const { transformedHtml: htmlAfterAttributeBindings, bindings } = transformAttributeBindings(htmlAfterEvents);
 
   // Then transform text bindings (this will validate against declared states)
   const { transformedHtml: htmlAfterBindings, stateBindings } = transformTextBindings(
@@ -266,6 +266,6 @@ export function splitZen(file: ZenFile) {
     eventTypes: Array.from(eventTypes).sort(), // Return sorted array of event types
     stateBindings: Array.from(stateBindings.values()), // Return array of state bindings
     stateDeclarations: declaredStates, // Return map of state declarations
-    attributeBindings // Return attribute bindings for :class and :value
+    bindings // Return attribute bindings for :class and :value
   }
 }

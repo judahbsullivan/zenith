@@ -4,11 +4,11 @@ import { splitZen } from "./split"
 import { emit } from "./emit"
 import { generateEventBindingRuntime } from "./event"
 import { generateBindingRuntime } from "./binding"
-import { generateAttributeBindingRuntime } from "./attribute-bindings"
+import { generateAttributeBindingRuntime } from "./bindings"
 
 export function compile(entry: string, outDir = "dist") {
   const zen = parseZen(entry);
-  const { html, styles, scripts, eventTypes, stateBindings, stateDeclarations, attributeBindings } = splitZen(zen);
+  const { html, styles, scripts, eventTypes, stateBindings, stateDeclarations, bindings } = splitZen(zen);
 
   // Generate runtime code for event types
   const eventRuntime = generateEventBindingRuntime(eventTypes);
@@ -17,7 +17,7 @@ export function compile(entry: string, outDir = "dist") {
   const bindingRuntime = generateBindingRuntime(stateBindings, stateDeclarations);
   
   // Generate runtime code for attribute bindings (:class, :value)
-  const attributeBindingRuntime = generateAttributeBindingRuntime(attributeBindings);
+  const attributeBindingRuntime = generateAttributeBindingRuntime(bindings);
 
   const scriptsWithRuntime = scripts.map(s => {
     // Order: 
