@@ -1,5 +1,6 @@
-import type { ZenFile } from "./types"
+import type { ZenFile, StateBinding } from "./types"
 import * as parse5 from "parse5"
+import { extractStateDeclarations, transformStateDeclarations } from "./parse"
 
 // Transform on* attributes to data-zen-* attributes during compilation
 // Returns: { transformedHtml, eventTypes } where eventTypes is a Set of used event types
@@ -38,6 +39,142 @@ function transformEventAttributes(html: string): { transformedHtml: string; even
   return {
     transformedHtml: parse5.serialize(document),
     eventTypes
+  };
+}
+
+/**
+ * Transform text bindings { stateName } in text nodes to <span data-zen-bind="stateName"></span>
+ * Returns transformed HTML and a map of state bindings
+ */
+function transformTextBindings(
+  html: string,
+  declaredStates: Set<string>
+): { transformedHtml: string; stateBindings: Map<string, StateBinding> } {
+  const document = parse5.parse(html);
+  const stateBindings = new Map<string, StateBinding>();
+  let bindingIndex = 0;
+
+  function walk(node: any) {
+    // Skip script and style nodes - their content is handled separately
+    if (node.nodeName === 'script' || node.nodeName === 'style') {
+      return;
+    }
+
+    if (!node.childNodes || !Array.isArray(node.childNodes)) {
+      return;
+    }
+
+    const newChildNodes: any[] = [];
+    
+    for (const child of node.childNodes) {
+      if (child.nodeName === '#text' && child.value) {
+        const text = child.value;
+        // Match { identifier } pattern - only simple identifiers, no expressions
+        const bindingRegex = /\{\s*(\w+)\s*\}/g;
+        const matches = Array.from(text.matchAll(bindingRegex));
+        
+        if (matches.length === 0) {
+          // No bindings, keep the text node as-is
+          newChildNodes.push(child);
+        } else {
+          // Validate all bindings reference declared states
+          for (const match of matches) {
+            const m = match as RegExpMatchArray;
+            const stateName = m[1];
+            if (!stateName || !declaredStates.has(stateName)) {
+              throw new Error(
+                `Compiler Error: Binding "{ ${stateName || 'unknown'} }" references undeclared state. ` +
+                `Declared states: ${Array.from(declaredStates).join(', ') || '(none)'}`
+              );
+            }
+          }
+
+          // Split text by bindings and create nodes
+          let lastIndex = 0;
+
+          for (const match of matches) {
+            const m = match as RegExpMatchArray;
+            const stateName = m[1];
+            if (!stateName) continue; // Skip if state name is missing (shouldn't happen)
+            
+            const matchStart = m.index!;
+            const matchEnd = matchStart + m[0].length;
+
+            // Add text before the binding
+            if (matchStart > lastIndex) {
+              const beforeText = text.substring(lastIndex, matchStart);
+              if (beforeText) {
+                newChildNodes.push({
+                  nodeName: '#text',
+                  value: beforeText,
+                  parentNode: node
+                });
+              }
+            }
+
+            // Create span element for binding
+            const bindId = `bind-${bindingIndex++}`;
+            const spanNode = {
+              nodeName: 'span',
+              tagName: 'span',
+              attrs: [
+                {
+                  name: 'data-zen-bind',
+                  value: stateName
+                },
+                {
+                  name: 'data-zen-bind-id',
+                  value: bindId
+                }
+              ],
+              childNodes: [],
+              parentNode: node
+            };
+            newChildNodes.push(spanNode);
+
+            // Track this binding
+            if (!stateBindings.has(stateName)) {
+              stateBindings.set(stateName, {
+                stateName,
+                bindings: []
+              });
+            }
+            const binding = stateBindings.get(stateName)!;
+            binding.bindings.push({
+              stateName,
+              nodeIndex: bindingIndex - 1
+            });
+
+            lastIndex = matchEnd;
+          }
+
+          // Add remaining text after last binding
+          if (lastIndex < text.length) {
+            const afterText = text.substring(lastIndex);
+            if (afterText) {
+              newChildNodes.push({
+                nodeName: '#text',
+                value: afterText,
+                parentNode: node
+              });
+            }
+          }
+        }
+      } else {
+        // Not a text node, recurse into it
+        walk(child);
+        newChildNodes.push(child);
+      }
+    }
+    
+    node.childNodes = newChildNodes;
+  }
+
+  walk(document);
+
+  return {
+    transformedHtml: parse5.serialize(document),
+    stateBindings
   };
 }
 
@@ -97,14 +234,38 @@ function stripScriptAndStyleTags(html: string): string {
 // this function splits the props into what we are compiling the them down too 
 // html styles and scripts
 export function splitZen(file: ZenFile) {
-  // First transform attribute bindings, then event attributes, then strip script/style tags
-  const { transformedHtml: htmlAfterBindings, bindings } = transformAttributeBindings(file.html);
-  const { transformedHtml, eventTypes } = transformEventAttributes(htmlAfterBindings);
+  // Extract state declarations from all scripts (name -> initial value)
+  const declaredStates = new Map<string, string>();
+  for (const script of file.scripts) {
+    const states = extractStateDeclarations(script.content);
+    states.forEach((value, name) => declaredStates.set(name, value));
+  }
+
+  // First transform event attributes
+  const { transformedHtml: htmlAfterEvents, eventTypes } = transformEventAttributes(file.html);
+
+  // Then transform attribute bindings (:class, :value)
+  const { transformedHtml: htmlAfterAttributeBindings, bindings } = transformAttributeBindings(htmlAfterEvents);
+
+  // Then transform text bindings (this will validate against declared states)
+  const { transformedHtml: htmlAfterBindings, stateBindings } = transformTextBindings(
+    htmlAfterAttributeBindings,
+    new Set(declaredStates.keys())
+  );
+
+  // Finally strip script/style tags
+  const finalHtml = stripScriptAndStyleTags(htmlAfterBindings);
+
+  // Transform scripts to remove state declarations (runtime will handle them)
+  const transformedScripts = file.scripts.map(s => transformStateDeclarations(s.content));
+
   return {
-    html: stripScriptAndStyleTags(transformedHtml),
-    scripts: file.scripts.map(s => s.content),
+    html: finalHtml,
+    scripts: transformedScripts,
     styles: file.styles.map(style => style.content),
     eventTypes: Array.from(eventTypes).sort(), // Return sorted array of event types
-    bindings // Return attribute bindings info
+    stateBindings: Array.from(stateBindings.values()), // Return array of state bindings
+    stateDeclarations: declaredStates, // Return map of state declarations
+    bindings // Return attribute bindings for :class and :value
   }
 }

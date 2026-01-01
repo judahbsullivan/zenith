@@ -43,3 +43,31 @@ export function parseZen(path: string): ZenFile {
     styles
   }
 }
+
+/**
+ * Extract state declarations from script content
+ * Returns a Map of state name -> initial value expression
+ */
+export function extractStateDeclarations(scriptContent: string): Map<string, string> {
+  const states = new Map<string, string>();
+  // Match "state identifier = ..." pattern (captures everything after = until end of statement)
+  // This regex matches: state <identifier> = <expression>
+  // We need to handle the expression which may contain commas, semicolons, etc.
+  // For now, we'll match until the end of the line or semicolon
+  const stateRegex = /state\s+(\w+)\s*=\s*([^;]+?)(?:\s*;|\s*$)/gm;
+  let match;
+  while ((match = stateRegex.exec(scriptContent)) !== null) {
+    const name = match[1];
+    const value = match[2].trim();
+    states.set(name, value);
+  }
+  return states;
+}
+
+/**
+ * Transform script content to remove state declarations (they'll be handled by runtime)
+ */
+export function transformStateDeclarations(scriptContent: string): string {
+  // Remove state declarations - replace with empty line
+  return scriptContent.replace(/state\s+\w+\s*=\s*[^;]+?(?:\s*;|\s*$)/gm, '');
+}
