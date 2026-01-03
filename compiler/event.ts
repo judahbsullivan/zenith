@@ -22,10 +22,22 @@ HTMLElement.prototype.setHTML = function(html) { this.innerHTML = html; }
 function delegate(event) {
   let type = event.type;
   let el = event.target;
-  while (el && !el.hasAttribute(\`data-zen-\${type}\`)) el = el.parentElement;
-  const handlerName = el?.getAttribute(\`data-zen-\${type}\`);
-  if (handlerName && typeof window[handlerName] === "function") {
-    window[handlerName](event, el);
+  // Ensure el is an Element (not text node, etc.) before checking attributes
+  while (el && el.nodeType === 1 && !el.hasAttribute(\`data-zen-\${type}\`)) {
+    el = el.parentElement;
+  }
+  // Also handle case where initial target wasn't an element
+  if (el && el.nodeType !== 1) {
+    el = el.parentElement;
+    while (el && el.nodeType === 1 && !el.hasAttribute(\`data-zen-\${type}\`)) {
+      el = el.parentElement;
+    }
+  }
+  if (el && el.nodeType === 1) {
+    const handlerName = el.getAttribute(\`data-zen-\${type}\`);
+    if (handlerName && typeof window[handlerName] === "function") {
+      window[handlerName](event, el);
+    }
   }
 }
 

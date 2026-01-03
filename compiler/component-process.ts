@@ -32,8 +32,22 @@ export function processComponents(entryFile: ZenFile, entryPath: string): ZenFil
   const componentsDir = path.join(baseDir, "components");
   const layoutsDir = path.join(baseDir, "layouts");
   
-  // Discover components and layouts
-  const components = discoverComponents(componentsDir, baseDir);
+  // Also look for components in router/navigation (for ZenLink)
+  // Use routerNavigationDir as the base so component names are derived correctly
+  // (e.g., ZenLink.zen -> ZenLink, not router/navigation/ZenLink -> RouterNavigationZenlink)
+  const routerNavigationDir = path.join(baseDir, "..", "router", "navigation");
+  
+  // Discover components from both app/components and router/navigation
+  const appComponents = discoverComponents(componentsDir, baseDir);
+  const routerComponents = discoverComponents(routerNavigationDir, routerNavigationDir);
+  
+  // Merge components (router components take precedence if name conflicts)
+  const components = new Map(appComponents);
+  for (const [name, metadata] of routerComponents.entries()) {
+    components.set(name, metadata);
+  }
+  
+  // Discover layouts
   const layouts = discoverLayouts(layoutsDir, baseDir);
   
   // Keep components and layouts separate

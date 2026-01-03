@@ -3,6 +3,154 @@ import * as parse5 from "parse5"
 import { extractStateDeclarations, extractStateDeclarationsWithLocation, transformStateDeclarations, type StateDeclarationInfo } from "./parse"
 import { extractEventHandlers, detectStateMutations, validateStateMutations, type InlineHandlerInfo } from "./mutation"
 
+// ============================================
+// ES6 Import Transform & Auto-Import System
+// ============================================
+
+/**
+ * Zen primitives that can be auto-imported
+ * Maps the function name to its internal implementation
+ */
+const ZEN_AUTO_IMPORTS = {
+  // Reactivity primitives
+  zenSignal: '__zenith.signal',
+  zenState: '__zenith.state',
+  zenEffect: '__zenith.effect',
+  zenMemo: '__zenith.memo',
+  zenRef: '__zenith.ref',
+  zenBatch: '__zenith.batch',
+  zenUntrack: '__zenith.untrack',
+  // Clean aliases
+  signal: '__zenith.signal',
+  state: '__zenith.state',
+  effect: '__zenith.effect',
+  memo: '__zenith.memo',
+  ref: '__zenith.ref',
+  batch: '__zenith.batch',
+  untrack: '__zenith.untrack',
+  // Lifecycle hooks
+  zenOnMount: '__zenith.onMount',
+  zenOnUnmount: '__zenith.onUnmount',
+  onMount: '__zenith.onMount',
+  onUnmount: '__zenith.onUnmount',
+  // Navigation (from router)
+  navigate: '__zenith_router.navigate',
+  getRoute: '__zenith_router.getRoute',
+  isActive: '__zenith_router.isActive',
+  prefetch: '__zenith_router.prefetch',
+} as const;
+
+/**
+ * Parse and transform ES6 imports in script content
+ * Converts imports to window/global references
+ */
+function transformImports(script: string): { 
+  transformed: string; 
+  imports: Array<{ from: string; names: string[] }>;
+} {
+  const imports: Array<{ from: string; names: string[] }> = [];
+  
+  // Match ES6 import statements
+  // import { a, b, c } from 'module'
+  // import { a as b } from 'module'
+  // import defaultExport from 'module'
+  // import * as name from 'module'
+  const importRegex = /import\s+(?:(\{[^}]+\})|(\*\s+as\s+\w+)|(\w+))\s+from\s+['"]([^'"]+)['"]\s*;?/g;
+  
+  let transformed = script;
+  let match;
+  
+  while ((match = importRegex.exec(script)) !== null) {
+    const namedImports = match[1]; // { a, b, c }
+    const namespaceImport = match[2]; // * as name
+    const defaultImport = match[3]; // defaultExport
+    const modulePath = match[4]; // 'module'
+    
+    const importedNames: string[] = [];
+    
+    if (namedImports) {
+      // Parse { a, b as c, d }
+      const names = namedImports
+        .replace(/[{}]/g, '')
+        .split(',')
+        .map(n => n.trim())
+        .filter(n => n);
+      
+      for (const name of names) {
+        // Handle 'a as b' syntax
+        const asMatch = name.match(/(\w+)\s+as\s+(\w+)/);
+        if (asMatch) {
+          importedNames.push(asMatch[2]); // Use the alias
+        } else {
+          importedNames.push(name);
+        }
+      }
+    }
+    
+    if (defaultImport) {
+      importedNames.push(defaultImport);
+    }
+    
+    if (namespaceImport) {
+      const nsMatch = namespaceImport.match(/\*\s+as\s+(\w+)/);
+      if (nsMatch) {
+        importedNames.push(nsMatch[1]);
+      }
+    }
+    
+    imports.push({ from: modulePath, names: importedNames });
+  }
+  
+  // Remove import statements from the script
+  transformed = transformed.replace(importRegex, '');
+  
+  // Clean up any leftover empty lines from removed imports
+  transformed = transformed.replace(/^\s*\n{2,}/gm, '\n');
+  
+  return { transformed, imports };
+}
+
+/**
+ * Detect zen primitives used in script and generate auto-import declarations
+ */
+function generateAutoImports(script: string, existingImports: string[]): string {
+  const autoImportDeclarations: string[] = [];
+  
+  for (const [name, globalRef] of Object.entries(ZEN_AUTO_IMPORTS)) {
+    // Skip if already imported
+    if (existingImports.includes(name)) continue;
+    
+    // Check if the primitive is used in the script (as a word boundary)
+    const usageRegex = new RegExp(`\\b${name}\\s*\\(`, 'g');
+    if (usageRegex.test(script)) {
+      autoImportDeclarations.push(`const ${name} = window.${globalRef};`);
+    }
+  }
+  
+  if (autoImportDeclarations.length > 0) {
+    return `// Auto-imported zen primitives\n${autoImportDeclarations.join('\n')}\n\n`;
+  }
+  
+  return '';
+}
+
+/**
+ * Process script content: transform imports and add auto-imports
+ */
+export function processScriptImports(script: string): string {
+  // First, transform ES6 imports
+  const { transformed, imports } = transformImports(script);
+  
+  // Collect all imported names
+  const importedNames = imports.flatMap(i => i.names);
+  
+  // Generate auto-imports for zen primitives
+  const autoImports = generateAutoImports(transformed, importedNames);
+  
+  // Combine: auto-imports first, then the transformed script
+  return autoImports + transformed;
+}
+
 // Transform on* attributes to data-zen-* attributes during compilation
 // Also converts inline arrow functions to function names
 // Returns: { transformedHtml, eventTypes, inlineHandlerMap } 
@@ -384,30 +532,43 @@ export function splitZen(file: ZenFile) {
   // Finally strip script/style tags
   const finalHtml = stripScriptAndStyleTags(htmlAfterBindings);
 
-  // Transform scripts to remove state declarations (runtime will handle them)
-  // Use scriptsWithInlineHandlers instead of file.scripts to include injected inline handlers
-  // Also register functions on window so they can be accessed by components
+  // Transform scripts to:
+  // 1. Process ES6 imports (transform to window references)
+  // 2. Auto-import zen primitives
+  // 3. Remove state declarations (runtime will handle them)
+  // 4. Register functions on window for component access
   const transformedScripts = scriptsWithInlineHandlers.map((s, index) => {
     if (!s) return '';
-    let transformed = transformStateDeclarations(s.content);
     
-    // Extract function declarations and register them on window
+    // Step 1 & 2: Process imports and auto-imports
+    let transformed = processScriptImports(s.content);
+    
+    // Step 3: Transform state declarations
+    transformed = transformStateDeclarations(transformed);
+    
+    // Step 4: Extract function declarations and register them on window
     // This allows components to access parent functions via props
-    const functionRegex = /function\s+(\w+)\s*\([^)]*\)\s*\{/g;
-    const functionNames: string[] = [];
-    let match;
-    while ((match = functionRegex.exec(transformed)) !== null) {
-      if (match[1]) {
-        functionNames.push(match[1]);
-      }
-    }
+    // SKIP if script contains an IIFE with window registration (component scripts are pre-wrapped)
+    // Component scripts have pattern: window.__zen_comp_*_funcName = funcName
+    const hasComponentRegistration = /window\.__zen_comp_\d+_\w+\s*=/.test(transformed);
     
-    // Register functions on window (only if not already registered)
-    if (functionNames.length > 0) {
-      const registrationCode = functionNames.map(name => 
-        `  if (typeof window.${name} === 'undefined') { window.${name} = ${name}; }`
-      ).join('\n');
-      transformed += `\n\n// Register functions on window for component access\n${registrationCode}`;
+    if (!hasComponentRegistration) {
+      const functionRegex = /function\s+(\w+)\s*\([^)]*\)\s*\{/g;
+      const functionNames: string[] = [];
+      let match;
+      while ((match = functionRegex.exec(transformed)) !== null) {
+        if (match[1]) {
+          functionNames.push(match[1]);
+        }
+      }
+      
+      // Register functions on window (only if not already registered)
+      if (functionNames.length > 0) {
+        const registrationCode = functionNames.map(name => 
+          `  if (typeof window.${name} === 'undefined') { window.${name} = ${name}; }`
+        ).join('\n');
+        transformed += `\n\n// Register functions on window for component access\n${registrationCode}`;
+      }
     }
     
     return transformed;

@@ -2,7 +2,44 @@
   function parentCallback(clicks) {
     console.log('Parent received clicks', clicks)
   }
+  
+  function handleNavClick() {
+    console.log('[ZenLink] Navigation triggered via onClick handler')
+  }
 </script>
+
+<style>
+  .zen-nav-link {
+    padding: 8px 16px;
+    background: #6366f1;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background 0.2s, transform 0.1s;
+  }
+  
+  .zen-nav-link:hover {
+    background: #4f46e5;
+    transform: translateY(-1px);
+  }
+  
+  .zen-nav-link.zen-link-active {
+    background: #4338ca;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  }
+  
+  .legacy-link {
+    padding: 8px 16px;
+    background: #6b7280;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+  }
+  
+  .legacy-link:hover {
+    background: #4b5563;
+  }
+</style>
 
 <Main title="Home Page">
   <div>
@@ -19,19 +56,50 @@
         <li>✅ SPA navigation (no page reloads)</li>
         <li>✅ Hard refresh works on any route</li>
         <li>✅ Back/forward navigation works</li>
+        <li>✅ <strong>ZenLink component for SPA navigation</strong></li>
       </ul>
     </div>
     
-    <div style="margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 8px;">
-      <h3>📍 Navigation</h3>
-      <p>Click links below to test routing (uses standard <code>&lt;a&gt;</code> tags for now):</p>
+    <!-- ZenLink Navigation -->
+    <div style="margin: 20px 0; padding: 20px; border: 2px solid #6366f1; border-radius: 8px; background: #f0f0ff;">
+      <h3>🔗 ZenLink Navigation (SPA)</h3>
+      <p>These links use the <code>&lt;ZenLink&gt;</code> component for SPA-style navigation:</p>
       <nav>
-        <ul style="list-style: none; padding: 0; display: flex; gap: 16px; flex-wrap: wrap;">
-          <li><a href="/" style="padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">Home</a></li>
-          <li><a href="/about" style="padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">About</a></li>
-          <li><a href="/blog" style="padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">Blog</a></li>
-          <li><a href="/blog/42" style="padding: 8px 16px; background: #28a745; color: white; text-decoration: none; border-radius: 4px;">Blog Post #42</a></li>
-          <li><a href="/posts/hello/world" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px;">Catch-All Route</a></li>
+        <ul style="list-style: none; padding: 0; display: flex; gap: 12px; flex-wrap: wrap;">
+          <li><ZenLink href="/" class="zen-nav-link" exact>Home</ZenLink></li>
+          <li><ZenLink href="/about" class="zen-nav-link">About</ZenLink></li>
+          <li><ZenLink href="/primitives-demo" class="zen-nav-link">Primitives Demo</ZenLink></li>
+          <li><ZenLink href="/blog" class="zen-nav-link">Blog</ZenLink></li>
+          <li><ZenLink href="/blog/42" class="zen-nav-link" onClick="handleNavClick">Blog #42</ZenLink></li>
+          <li><ZenLink href="/posts/hello/world" class="zen-nav-link" preload>Catch-All</ZenLink></li>
+        </ul>
+      </nav>
+      <p style="font-size: 12px; color: #666; margin-top: 12px;">
+        ✨ Features: Active state detection, onClick handlers, preload on hover
+      </p>
+    </div>
+    
+    <!-- External Links -->
+    <div style="margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 8px;">
+      <h3>🌐 External Links (via ZenLink)</h3>
+      <p>ZenLink automatically detects external URLs and opens them in new tabs:</p>
+      <nav>
+        <ul style="list-style: none; padding: 0; display: flex; gap: 12px; flex-wrap: wrap;">
+          <li><ZenLink href="https://github.com" target="_blank" class="zen-nav-link">GitHub</ZenLink></li>
+          <li><ZenLink href="https://bun.sh" class="zen-nav-link" target="_blank">Bun</ZenLink></li>
+        </ul>
+      </nav>
+    </div>
+    
+    <!-- Legacy Links -->
+    <div style="margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 8px;">
+      <h3>📍 Legacy Navigation (Standard Links)</h3>
+      <p>Regular <code>&lt;a&gt;</code> tags still work (full page reload):</p>
+      <nav>
+        <ul style="list-style: none; padding: 0; display: flex; gap: 12px; flex-wrap: wrap;">
+          <li><a href="/" class="legacy-link">Home</a></li>
+          <li><a href="/about" class="legacy-link">About</a></li>
+          <li><a href="/blog" class="legacy-link">Blog</a></li>
         </ul>
       </nav>
     </div>
@@ -47,7 +115,7 @@
       </div>
       
       <div style="margin: 15px 0;">
-        <h4>Link Component</h4>
+        <h4>Link Component (legacy)</h4>
         <Link href="/about" label="About Page" />
       </div>
     </div>
@@ -56,14 +124,28 @@
       <h3>📁 Route Structure</h3>
       <pre style="background: #2d2d2d; color: #f8f8f2; padding: 16px; border-radius: 4px; overflow-x: auto;">
 pages/
-├── index.zen          → /
-├── about.zen          → /about
+├── index.zen              → /
+├── about.zen              → /about
+├── primitives-demo.zen    → /primitives-demo
 ├── blog/
-│   ├── index.zen      → /blog
-│   └── [id].zen       → /blog/:id
+│   ├── index.zen          → /blog
+│   └── [id].zen           → /blog/:id
 └── posts/
-    └── [...slug].zen  → /posts/*slug
+    └── [...slug].zen      → /posts/*slug
       </pre>
+    </div>
+    
+    <div style="margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background: #fffbeb;">
+      <h3>📖 ZenLink API</h3>
+      <p>See <code>router/navigation/ZenLink.zen</code> for component source.</p>
+      <ul style="font-size: 14px; line-height: 1.8;">
+        <li><strong>Basic:</strong> <code>&lt;ZenLink href="/about"&gt;About&lt;/ZenLink&gt;</code></li>
+        <li><strong>With class:</strong> <code>&lt;ZenLink href="/blog" class="nav-link"&gt;Blog&lt;/ZenLink&gt;</code></li>
+        <li><strong>With click:</strong> <code>&lt;ZenLink href="/contact" onClick="handleClick"&gt;Contact&lt;/ZenLink&gt;</code></li>
+        <li><strong>Preload:</strong> <code>&lt;ZenLink href="/pricing" preload&gt;Pricing&lt;/ZenLink&gt;</code></li>
+        <li><strong>Exact match:</strong> <code>&lt;ZenLink href="/" exact&gt;Home&lt;/ZenLink&gt;</code></li>
+        <li><strong>Programmatic:</strong> <code>navigate('/dashboard')</code> from zenith/core</li>
+      </ul>
     </div>
   </div>
 </Main>

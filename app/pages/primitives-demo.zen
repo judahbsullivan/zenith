@@ -1,0 +1,273 @@
+<script>
+// ============================================
+// Zen* Primitives Demo
+// ============================================
+// These primitives are AUTO-IMPORTED - no import statement needed!
+// The compiler detects usage and injects them automatically.
+
+// zenSignal - Atomic reactive value
+const count = zenSignal(0)
+const multiplier = zenSignal(2)
+
+function incrementCount() {
+  count(count() + 1)
+}
+
+function decrementCount() {
+  count(count() - 1)
+}
+
+// zenMemo - Computed/cached value
+const doubled = zenMemo(() => count() * 2)
+const multiplied = zenMemo(() => count() * multiplier())
+
+// zenEffect - Auto-tracked side effect
+zenEffect(() => {
+  console.log('[zenEffect] Count changed to:', count())
+  // Update display
+  const el = document.getElementById('count-display')
+  if (el) el.textContent = String(count())
+  
+  const dblEl = document.getElementById('doubled-display')
+  if (dblEl) dblEl.textContent = String(doubled())
+  
+  const mulEl = document.getElementById('multiplied-display')
+  if (mulEl) mulEl.textContent = String(multiplied())
+})
+
+// zenRef - DOM reference
+const inputRef = zenRef()
+
+function focusInput() {
+  if (inputRef.current) {
+    inputRef.current.focus()
+    inputRef.current.select()
+  }
+}
+
+// zenBatch - Batch updates
+function batchUpdate() {
+  zenBatch(() => {
+    count(count() + 1)
+    multiplier(multiplier() + 1)
+  })
+}
+
+// zenOnMount - Lifecycle hook
+zenOnMount(() => {
+  console.log('[zenOnMount] Page mounted!')
+  // Focus input on mount
+  setTimeout(() => {
+    if (inputRef.current) inputRef.current.focus()
+  }, 100)
+  
+  // Return cleanup function
+  return () => {
+    console.log('[zenOnMount cleanup] Page unmounting...')
+  }
+})
+
+// zenOnUnmount - Cleanup hook
+zenOnUnmount(() => {
+  console.log('[zenOnUnmount] Page is unmounting!')
+})
+</script>
+
+<style>
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #f5f5f5;
+  }
+  
+  .demo-section {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  
+  .demo-section h2 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 2px solid #6366f1;
+    padding-bottom: 10px;
+  }
+  
+  .value-display {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+    margin: 10px 0;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 16px;
+  }
+  
+  .button-group {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 10px 0;
+  }
+  
+  button {
+    background: #6366f1;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s, transform 0.1s;
+  }
+  
+  button:hover {
+    background: #4f46e5;
+    transform: translateY(-1px);
+  }
+  
+  button:active {
+    transform: translateY(0);
+  }
+  
+  .success { background: #22c55e; }
+  .success:hover { background: #16a34a; }
+  
+  code {
+    background: #e5e7eb;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    color: #6366f1;
+  }
+  
+  .highlight {
+    color: #6366f1;
+    font-weight: 600;
+  }
+  
+  input {
+    padding: 10px;
+    border: 2px solid #e5e7eb;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 200px;
+  }
+  
+  input:focus {
+    border-color: #6366f1;
+    outline: none;
+  }
+  
+  .nav-link {
+    display: inline-block;
+    padding: 8px 16px;
+    background: #6366f1;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    margin-right: 10px;
+    transition: background 0.2s;
+  }
+  
+  .nav-link:hover {
+    background: #4f46e5;
+  }
+</style>
+
+<Main title="Zen* Primitives Demo">
+  <div>
+    <h1>🎯 Zen* Primitives - Live Demo</h1>
+    <p>All primitives are <span class="highlight">auto-imported</span> - no import statements needed!</p>
+    
+    <!-- zenSignal Demo -->
+    <div class="demo-section">
+      <h2>📊 zenSignal - Reactive Counter</h2>
+      <p>Atomic reactive values with getter/setter pattern</p>
+      
+      <div class="value-display">
+        count() = <strong id="count-display">0</strong>
+      </div>
+      <div class="value-display">
+        doubled (zenMemo) = <strong id="doubled-display">0</strong>
+      </div>
+      <div class="value-display">
+        count × multiplier (zenMemo) = <strong id="multiplied-display">0</strong>
+      </div>
+      
+      <div class="button-group">
+        <button onclick="incrementCount">+1</button>
+        <button onclick="decrementCount">-1</button>
+        <button onclick="batchUpdate" class="success">Batch +1 Both</button>
+      </div>
+      
+      <p style="font-size: 13px; color: #666;">
+        <code>zenSignal(0)</code> creates a reactive value. 
+        <code>zenMemo</code> creates cached computed values.
+        <code>zenEffect</code> automatically updates the DOM when dependencies change.
+      </p>
+    </div>
+    
+    <!-- zenRef Demo -->
+    <div class="demo-section">
+      <h2>🎯 zenRef - DOM Reference</h2>
+      <p>Non-reactive container for DOM elements</p>
+      
+      <input ref="inputRef" type="text" placeholder="Type something here..." />
+      <div class="button-group" style="margin-top: 10px;">
+        <button onclick="focusInput">Focus & Select Input</button>
+      </div>
+      
+      <p style="font-size: 13px; color: #666;">
+        <code>zenRef()</code> creates a mutable container. 
+        Use <code>ref="inputRef"</code> in HTML to bind.
+      </p>
+    </div>
+    
+    <!-- Lifecycle Demo -->
+    <div class="demo-section">
+      <h2>🔄 Lifecycle Hooks</h2>
+      <p>Check the browser console for lifecycle logs!</p>
+      
+      <ul style="font-size: 14px; line-height: 1.8;">
+        <li><code>zenOnMount</code> - runs after page renders (check console)</li>
+        <li><code>zenOnUnmount</code> - runs when navigating away (check console)</li>
+      </ul>
+      
+      <p style="font-size: 13px; color: #666;">
+        Navigate to another page to see unmount logs.
+      </p>
+    </div>
+    
+    <!-- Navigation -->
+    <div class="demo-section">
+      <h2>🔗 Navigation</h2>
+      <p>Test SPA navigation (unmount hooks will fire):</p>
+      <ZenLink href="/" class="nav-link">← Home</ZenLink>
+      <ZenLink href="/about" class="nav-link">About</ZenLink>
+      <ZenLink href="/blog" class="nav-link">Blog</ZenLink>
+    </div>
+    
+    <!-- API Reference -->
+    <div class="demo-section">
+      <h2>📖 Auto-Imported Primitives</h2>
+      <p>These are automatically available in any <code>.zen</code> file:</p>
+      <ul style="font-size: 14px; line-height: 2;">
+        <li><code>zenSignal(value)</code> / <code>signal(value)</code></li>
+        <li><code>zenState(obj)</code> / <code>state(obj)</code></li>
+        <li><code>zenMemo(fn)</code> / <code>memo(fn)</code></li>
+        <li><code>zenEffect(fn)</code> / <code>effect(fn)</code></li>
+        <li><code>zenRef()</code> / <code>ref()</code></li>
+        <li><code>zenBatch(fn)</code> / <code>batch(fn)</code></li>
+        <li><code>zenUntrack(fn)</code> / <code>untrack(fn)</code></li>
+        <li><code>zenOnMount(fn)</code> / <code>onMount(fn)</code></li>
+        <li><code>zenOnUnmount(fn)</code> / <code>onUnmount(fn)</code></li>
+      </ul>
+    </div>
+  </div>
+</Main>

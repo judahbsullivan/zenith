@@ -36,6 +36,17 @@
  * zenEffect(() => console.log(count()))
  * zenOnMount(() => console.log('Ready'))
  * ```
+ * 
+ * @example
+ * ```ts
+ * // For navigation, import from router
+ * import { navigate, isActive } from 'zenith/router'
+ * 
+ * navigate('/about')
+ * if (isActive('/blog')) {
+ *   // Handle active state
+ * }
+ * ```
  */
 
 // ============================================

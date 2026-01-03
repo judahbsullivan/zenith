@@ -173,6 +173,11 @@ function generateRuntimeRouterCode(): string {
    * Clean up previous page
    */
   function cleanupPreviousPage() {
+    // Trigger unmount lifecycle hooks
+    if (window.__zenith && window.__zenith.triggerUnmount) {
+      window.__zenith.triggerUnmount();
+    }
+    
     // Remove previous page styles
     document.querySelectorAll('style[data-zen-page-style]').forEach(s => s.remove());
     
@@ -225,6 +230,11 @@ function generateRuntimeRouterCode(): string {
     routerOutlet.innerHTML = pageModule.html;
     injectStyles(pageModule.styles);
     executeScripts(pageModule.scripts);
+    
+    // Trigger mount lifecycle hooks after scripts are executed
+    if (window.__zenith && window.__zenith.triggerMount) {
+      window.__zenith.triggerMount();
+    }
   }
   
   /**
@@ -337,6 +347,33 @@ function generateRuntimeRouterCode(): string {
   }
   
   /**
+   * Prefetch a route (preload page module)
+   */
+  const prefetchedRoutes = new Set();
+  function prefetch(path) {
+    const normalizedPath = path === '' ? '/' : path;
+    if (prefetchedRoutes.has(normalizedPath)) {
+      return Promise.resolve();
+    }
+    prefetchedRoutes.add(normalizedPath);
+    
+    // Find matching route
+    const resolved = resolveRoute(normalizedPath);
+    if (!resolved) {
+      return Promise.resolve();
+    }
+    
+    // Preload the module if it exists
+    if (pageModules[resolved.record.path]) {
+      // Module already loaded
+      return Promise.resolve();
+    }
+    
+    // Could prefetch here if we had a way to load modules dynamically
+    return Promise.resolve();
+  }
+  
+  /**
    * Initialize router
    */
   function initRouter(manifest, modules, outlet) {
@@ -365,11 +402,330 @@ function generateRuntimeRouterCode(): string {
     getRoute,
     onRouteChange,
     isActive,
+    prefetch,
     initRouter
   };
   
   // Also expose navigate directly for convenience
   window.navigate = navigate;
+  
+})();
+`
+}
+
+/**
+ * Generate the Zen primitives runtime code
+ * This makes zen* primitives available globally for auto-imports
+ */
+function generateZenPrimitivesRuntime(): string {
+  return `
+// ============================================
+// Zenith Reactivity Primitives Runtime
+// ============================================
+// Auto-imported zen* primitives are resolved from window.__zenith
+
+(function() {
+  'use strict';
+  
+  // ============================================
+  // Dependency Tracking System
+  // ============================================
+  
+  let currentEffect = null;
+  const effectStack = [];
+  let batchDepth = 0;
+  const pendingEffects = new Set();
+  
+  function pushContext(effect) {
+    effectStack.push(currentEffect);
+    currentEffect = effect;
+  }
+  
+  function popContext() {
+    currentEffect = effectStack.pop() || null;
+  }
+  
+  function trackDependency(subscribers) {
+    if (currentEffect) {
+      subscribers.add(currentEffect);
+      currentEffect.dependencies.add(subscribers);
+    }
+  }
+  
+  function notifySubscribers(subscribers) {
+    const effects = [...subscribers];
+    for (const effect of effects) {
+      if (batchDepth > 0) {
+        pendingEffects.add(effect);
+      } else {
+        effect.run();
+      }
+    }
+  }
+  
+  function cleanupEffect(effect) {
+    for (const deps of effect.dependencies) {
+      deps.delete(effect);
+    }
+    effect.dependencies.clear();
+  }
+  
+  // ============================================
+  // zenSignal - Atomic reactive value
+  // ============================================
+  
+  function zenSignal(initialValue) {
+    let value = initialValue;
+    const subscribers = new Set();
+    
+    function signal(newValue) {
+      if (arguments.length === 0) {
+        trackDependency(subscribers);
+        return value;
+      }
+      if (newValue !== value) {
+        value = newValue;
+        notifySubscribers(subscribers);
+      }
+      return value;
+    }
+    
+    return signal;
+  }
+  
+  // ============================================
+  // zenState - Deep reactive object
+  // ============================================
+  
+  function zenState(initialObj) {
+    const subscribers = new Map(); // path -> Set of effects
+    
+    function getSubscribers(path) {
+      if (!subscribers.has(path)) {
+        subscribers.set(path, new Set());
+      }
+      return subscribers.get(path);
+    }
+    
+    function createProxy(obj, path = '') {
+      if (typeof obj !== 'object' || obj === null) return obj;
+      
+      return new Proxy(obj, {
+        get(target, prop) {
+          const propPath = path ? path + '.' + String(prop) : String(prop);
+          trackDependency(getSubscribers(propPath));
+          const value = target[prop];
+          if (typeof value === 'object' && value !== null) {
+            return createProxy(value, propPath);
+          }
+          return value;
+        },
+        set(target, prop, value) {
+          const propPath = path ? path + '.' + String(prop) : String(prop);
+          target[prop] = value;
+          notifySubscribers(getSubscribers(propPath));
+          // Also notify parent path for nested updates
+          if (path) {
+            notifySubscribers(getSubscribers(path));
+          }
+          return true;
+        }
+      });
+    }
+    
+    return createProxy(initialObj);
+  }
+  
+  // ============================================
+  // zenEffect - Auto-tracked side effect
+  // ============================================
+  
+  function zenEffect(fn) {
+    const effect = {
+      fn,
+      dependencies: new Set(),
+      run() {
+        cleanupEffect(this);
+        pushContext(this);
+        try {
+          this.fn();
+        } finally {
+          popContext();
+        }
+      },
+      dispose() {
+        cleanupEffect(this);
+      }
+    };
+    
+    effect.run();
+    return () => effect.dispose();
+  }
+  
+  // ============================================
+  // zenMemo - Cached computed value
+  // ============================================
+  
+  function zenMemo(fn) {
+    let cachedValue;
+    let dirty = true;
+    const subscribers = new Set();
+    
+    const effect = {
+      dependencies: new Set(),
+      run() {
+        dirty = true;
+        notifySubscribers(subscribers);
+      }
+    };
+    
+    function compute() {
+      if (dirty) {
+        cleanupEffect(effect);
+        pushContext(effect);
+        try {
+          cachedValue = fn();
+          dirty = false;
+        } finally {
+          popContext();
+        }
+      }
+      trackDependency(subscribers);
+      return cachedValue;
+    }
+    
+    return compute;
+  }
+  
+  // ============================================
+  // zenRef - Non-reactive mutable container
+  // ============================================
+  
+  function zenRef(initialValue) {
+    return { current: initialValue !== undefined ? initialValue : null };
+  }
+  
+  // ============================================
+  // zenBatch - Batch updates
+  // ============================================
+  
+  function zenBatch(fn) {
+    batchDepth++;
+    try {
+      fn();
+    } finally {
+      batchDepth--;
+      if (batchDepth === 0) {
+        const effects = [...pendingEffects];
+        pendingEffects.clear();
+        for (const effect of effects) {
+          effect.run();
+        }
+      }
+    }
+  }
+  
+  // ============================================
+  // zenUntrack - Read without tracking
+  // ============================================
+  
+  function zenUntrack(fn) {
+    const prevEffect = currentEffect;
+    currentEffect = null;
+    try {
+      return fn();
+    } finally {
+      currentEffect = prevEffect;
+    }
+  }
+  
+  // ============================================
+  // Lifecycle Hooks
+  // ============================================
+  
+  const mountCallbacks = [];
+  const unmountCallbacks = [];
+  let isMounted = false;
+  
+  function zenOnMount(fn) {
+    if (isMounted) {
+      // Already mounted, run immediately
+      const cleanup = fn();
+      if (typeof cleanup === 'function') {
+        unmountCallbacks.push(cleanup);
+      }
+    } else {
+      mountCallbacks.push(fn);
+    }
+  }
+  
+  function zenOnUnmount(fn) {
+    unmountCallbacks.push(fn);
+  }
+  
+  // Called by router when page mounts
+  function triggerMount() {
+    isMounted = true;
+    for (const cb of mountCallbacks) {
+      const cleanup = cb();
+      if (typeof cleanup === 'function') {
+        unmountCallbacks.push(cleanup);
+      }
+    }
+    mountCallbacks.length = 0;
+  }
+  
+  // Called by router when page unmounts
+  function triggerUnmount() {
+    isMounted = false;
+    for (const cb of unmountCallbacks) {
+      try { cb(); } catch(e) { console.error('[Zenith] Unmount error:', e); }
+    }
+    unmountCallbacks.length = 0;
+  }
+  
+  // ============================================
+  // Export to window.__zenith
+  // ============================================
+  
+  window.__zenith = {
+    // Reactivity primitives
+    signal: zenSignal,
+    state: zenState,
+    effect: zenEffect,
+    memo: zenMemo,
+    ref: zenRef,
+    batch: zenBatch,
+    untrack: zenUntrack,
+    // Lifecycle
+    onMount: zenOnMount,
+    onUnmount: zenOnUnmount,
+    // Internal hooks for router
+    triggerMount,
+    triggerUnmount
+  };
+  
+  // Also expose with zen* prefix for direct usage
+  window.zenSignal = zenSignal;
+  window.zenState = zenState;
+  window.zenEffect = zenEffect;
+  window.zenMemo = zenMemo;
+  window.zenRef = zenRef;
+  window.zenBatch = zenBatch;
+  window.zenUntrack = zenUntrack;
+  window.zenOnMount = zenOnMount;
+  window.zenOnUnmount = zenOnUnmount;
+  
+  // Clean aliases
+  window.signal = zenSignal;
+  window.state = zenState;
+  window.effect = zenEffect;
+  window.memo = zenMemo;
+  window.ref = zenRef;
+  window.batch = zenBatch;
+  window.untrack = zenUntrack;
+  window.onMount = zenOnMount;
+  window.onUnmount = zenOnUnmount;
   
 })();
 `
@@ -432,6 +788,11 @@ function generateHTMLShell(
 <body>
   <!-- Router Outlet -->
   <div id="app"></div>
+  
+  <!-- Zenith Primitives Runtime -->
+  <script>
+    ${generateZenPrimitivesRuntime()}
+  </script>
   
   <!-- Zenith Runtime Router -->
   <script>

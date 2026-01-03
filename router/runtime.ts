@@ -401,10 +401,47 @@ export function isActive(path: string, exact: boolean = false): boolean {
 }
 
 /**
- * Prefetch a route (future extension)
+ * Prefetch a route for faster navigation
+ * 
+ * This preloads the page module into the route manifest cache,
+ * so when the user navigates to it, there's no loading delay.
  */
-export function prefetch(_path: string): Promise<void> {
-  // Future: Preload page module
-  return Promise.resolve()
+const prefetchedRoutes = new Set<string>()
+
+export async function prefetch(path: string): Promise<void> {
+  // Normalize path
+  const normalizedPath = path === "" ? "/" : path
+  
+  // Don't prefetch if already done
+  if (prefetchedRoutes.has(normalizedPath)) {
+    return
+  }
+  
+  // Find matching route
+  const resolved = resolveRoute(normalizedPath)
+  
+  if (!resolved) {
+    console.warn(`[Zenith Router] Cannot prefetch: no route matches ${path}`)
+    return
+  }
+  
+  // Mark as prefetched
+  prefetchedRoutes.add(normalizedPath)
+  
+  // If route has a load function, call it to preload the module
+  if (resolved.record.load && !resolved.record.module) {
+    try {
+      resolved.record.module = resolved.record.load()
+    } catch (error) {
+      console.warn(`[Zenith Router] Error prefetching ${path}:`, error)
+    }
+  }
+}
+
+/**
+ * Check if a route has been prefetched
+ */
+export function isPrefetched(path: string): boolean {
+  return prefetchedRoutes.has(path === "" ? "/" : path)
 }
 
