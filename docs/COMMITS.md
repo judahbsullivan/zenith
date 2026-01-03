@@ -24,3 +24,13 @@
 | style:          | CHANGELOG         | ...                                  |
 | test:           | CHANGELOG         | ...                                  |
 | refactor:       | CHANGELOG         | ...                                  |
+
+### Glossary
+
+- `feat:` - New features
+- `fix:` - Bug fixes
+- `docs:` - Documentation changes
+- `style:` - Code style changes (formatting, no logic change)
+- `refactor:` - Code refactoring
+- `test:` - Adding or updating tests
+- `chore:` - Maintenance tasks
