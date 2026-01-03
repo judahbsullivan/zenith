@@ -52,4 +52,4 @@ DOM
 
 Zenith is in the **foundation phase**. APIs may change rapidly.
 
-
+### [Contributing](./docs/CONTRIBUTING.md)
